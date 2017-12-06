@@ -15,7 +15,11 @@
 #include <unistd.h>
 #include "support.h"
 #include "Server.h"
-
+#include <ctype.h>
+#include <string>       // std::string
+#include <iostream>     // std::cout
+#include <sstream>
+using namespace std;
 
 void help(char *progname)
 {
@@ -25,6 +29,70 @@ void help(char *progname)
 	printf("  -l    number of entries in the LRU cache\n");
 	printf("  -p    port on which to listen for connections\n");
 }
+
+
+
+
+char* try_put(char* request, int size){
+	int loc= 0;
+	int idx =0;
+	int data_start = 0;
+	const int MAXLINE = 8192;
+	char filesize[MAXLINE];
+	char put_name[MAXLINE];
+     for(int i= 0; i<size; i++){
+			 if(request[i] == '\n'){
+				 loc = i + 1;
+				 break;
+			 }
+		 }
+		 while(isdigit(request[loc]) && request[loc] != '\n'){
+			 filesize[idx] = request[loc];
+			 idx++;
+			 loc++;
+		 }
+		 filesize[idx + 1] = '\0';
+data_start = loc +1;
+stringstream str(filesize);
+int x;
+str >> x;
+printf("%d\n", x);
+idx = 0;
+int name_start = 4;
+for(int i = name_start; i<size; i++){
+	if(request[i]=='\n'){
+		loc = i + 1;
+		break;
+	}else{
+		put_name[idx] = request[i];
+		idx++;
+	}
+}
+char * contents;
+contents = (char *)malloc((x)*sizeof(char)); // Enough memory for file + \0
+
+memcpy(contents, request+data_start, x);
+printf("%s\n", put_name);
+printf("%s\n", contents);
+if (access(put_name, F_OK) != -1){
+	printf("%s\n", "file exists... overwrite" );
+	if(FILE *fp = fopen(put_name, "wb")){
+	fwrite(contents, sizeof(char), (x+1), fp);
+	fclose(fp);
+}
+}
+
+else{
+	printf("%s\n", "file does not exist.. create" );
+	if(FILE *fp = fopen(put_name, "wb")){
+	fwrite(contents, sizeof(char), (x+1), fp);
+	fclose(fp);
+}
+}
+}
+
+
+
 
 void die(const char *msg1, char *msg2)
 {
@@ -154,13 +222,14 @@ void file_server(int connfd, int lru_size)
 			/* end service to this client on EOF */
 			if(nsofar == 0)
 			{
+				//fprintf(stderr, "%s\n", buf );
 				fprintf(stderr, "received EOF\n");
 				return;
 			}
 			/* update pointer for next bit of reading */
 			bufp += nsofar;
 			nremain -= nsofar;
-			if(*(bufp-1) == '\n')
+		if(*(bufp-1) == '\n')
 			{
 				*bufp = 0;
 				break;
@@ -169,8 +238,15 @@ void file_server(int connfd, int lru_size)
 
 		/* dump content back to client (again, must handle short counts) */
 		printf("server received %d bytes\n", MAXLINE-nremain);
+		fprintf(stderr,  buf );
+		if(strncmp(buf, "PUT", 3) ==0){
+			fprintf(stderr, "This is a put.\n" );
+			try_put(buf, MAXLINE-nremain);
+
+		}
 		nremain = bufp - buf;
 		bufp = buf;
+
 		while(nremain > 0)
 		{
 			/* write some data; swallow EINTRs */
@@ -187,6 +263,8 @@ void file_server(int connfd, int lru_size)
 		}
 	}
 }
+
+
 
 /*
  * main() - parse command line, create a socket, handle requests
