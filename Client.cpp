@@ -197,10 +197,14 @@ fclose(fileptr); // Close the file
 
 //sprintf(buf, "PUT %s\n%ld\n%02X\n", put_name, filelen, contents);
 //printf("%s\n", buf );
-sprintf(buf, "PUT %s\n%ld\n%s\n", put_name, filelen,contents );
+sprintf(buf, "PUT %s\n%ld\n", put_name, filelen);
 
 
 sendData(buf, strlen(buf), fd);
+sendData(contents, filelen, fd);
+bzero(buf, MAXLINE);
+strncpy(buf, "\n", 1);
+sendData(buf, 1, fd);
 
 
 
