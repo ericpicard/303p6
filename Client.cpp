@@ -151,13 +151,61 @@ void echo_client(int fd)
 	}
 }
 
+void sendData(char * buf, size_t n, int fd){
+	size_t nremain = n;
+	ssize_t nsofar;
+	char *bufp = buf;
+	while(nremain > 0)
+	{
+		if((nsofar = write(fd, bufp, nremain)) <= 0)
+		{
+			if(errno != EINTR)
+			{
+				fprintf(stderr, "Write error: %s\n", strerror(errno));
+				exit(0);
+			}
+			nsofar = 0;
+		}
+		nremain -= nsofar;
+		bufp += nsofar;
+	}
+}
 /*
  * put_file() - send a file to the server accessible via the given socket fd
  */
 void put_file(int fd, char *put_name)
 {
+
 	/* TODO: implement a proper solution, instead of calling the echo() client */
-	echo_client(fd);
+	if (access(put_name, F_OK) != -1){
+			//do work here
+			const int MAXLINE = 8192;
+			char buf[MAXLINE];
+			bzero(buf, MAXLINE);
+			buf[MAXLINE] = 0;
+		FILE *fileptr;
+		char *contents;
+		long filelen;
+
+		fileptr = fopen(put_name, "rb");  // Open the file in binary mode
+		fseek(fileptr, 0, SEEK_END);          // Jump to the end of the file
+		filelen = ftell(fileptr);             // Get the current byte offset in the file
+		rewind(fileptr);                      // Jump back to the beginning of the file
+
+		contents = (char *)malloc((filelen+1)*sizeof(char)); // Enough memory for file + \0
+		fread(contents, filelen, 1, fileptr); // Read in the entire file
+		fclose(fileptr); // Close the file
+
+		//sprintf(buf, "PUT %s\n%ld\n%02X\n", put_name, filelen, contents);
+		//printf("%s\n", buf );
+		sprintf(buf, "PUT %s\n%ld\n%s\n", put_name, filelen, contents);
+
+		sendData(buf, strlen(buf), fd);
+	}
+	else{
+		perror("Error: cannot put specified file. File does not exist.");
+		exit(-1);
+	}
 }
 
 /*
@@ -167,7 +215,16 @@ void put_file(int fd, char *put_name)
 void get_file(int fd, char *get_name, char *save_name)
 {
 	/* TODO: implement a proper solution, instead of calling the echo() client */
-	echo_client(fd);
+	//echo_client(fd);
+	const int MAXLINE = 8192;
+	char request[MAXLINE];
+
+	/* Send the get request to server*/
+	sprintf(request,"GET %s\n", get_name);
+	sendData(request, strlen(request), fd);
+
+	/* Receive Response*/
+	//exit(0);
 }
 
 /*
