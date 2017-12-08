@@ -39,6 +39,32 @@ void die(const char *msg1, const char *msg2)
 	exit(0);
 }
 
+char* checksum(const char* input, int size) {
+	MD5_CTX m;
+	unsigned char md[16];
+	char output[33];
+	
+	MD5_Init(&m);
+
+	while(size > 0) {
+		if(size > 512) {
+			MD5_Update(&m, input, 512);
+		} else {
+			MD5_Update(&m, input, size);
+		}
+		size -= 512;
+		input += 512;
+	}
+
+	MD5_Final(md, &m);
+	int i;
+	for(i = 0; i < 16; ++i){
+		snprintf(&(output[i*2]), 16*2, "%02x", (unsigned int)md[i]);
+	}
+
+	return output;
+}
+
 /*
  * connect_to_server() - open a connection to the server specified by the
  *                       parameters
@@ -151,6 +177,54 @@ void echo_client(int fd)
 	}
 }
 
+char* getData(int connfd){
+
+	const int MAXLINE = 8192;
+	char* buf = (char *) malloc (sizeof(char)* MAXLINE);   /* a place to store text from the client */
+	//bzero(buf, MAXLINE);
+
+
+	/* read from socket, recognizing that we may get short counts */
+	char *bufp = buf;              /* current pointer into buffer */
+	ssize_t nremain = MAXLINE;     /* max characters we can still read */
+	size_t nsofar;                 /* characters read so far */
+	while (1)
+	{
+		//	fprintf(stderr, "%s\n", "stuck" );
+		/* read some data; swallow EINTRs */
+		if((nsofar = read(connfd, bufp, nremain)) < 0)
+		{
+			printf("%s\n","error" );
+			if(errno != EINTR)
+			{
+				die("read error: ", strerror(errno));
+			}
+			continue;
+		}
+		/* end service to this client on EOF */
+		if(nsofar == 0)
+		{
+			//fprintf(stderr, "%s\n", buf );
+			fprintf(stderr, "received EOF\n");
+			return buf;
+			//die("fdsjkhl", "shjf");
+
+		}
+
+		bufp += nsofar;
+		nremain -= nsofar;
+
+		if(*(bufp-1) == '\n'){
+			*bufp = 0;
+			break;
+		}
+	/* update pointer for next bit of reading */
+	}
+	printf("server received %d bytes\n", MAXLINE-nremain);
+	return buf;
+
+}
+
 void sendData(char * buf, size_t n, int fd){
 	size_t nremain = n;
 	ssize_t nsofar;
@@ -222,6 +296,13 @@ void get_file(int fd, char *get_name, char *save_name)
 	/* Send the get request to server*/
 	sprintf(request,"GET %s\n", get_name);
 	sendData(request, strlen(request), fd);
+
+	char* reply = getData(fd);
+	FILE *fp = fopen(get_name, "wb");
+	fprintf(fp, "%s", reply);
+
+	rename(get_name,save_name);
+	fclose(fp);
 
 	/* Receive Response*/
 	//exit(0);
