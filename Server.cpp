@@ -30,12 +30,37 @@ void help(char *progname)
 	printf("  -p    port on which to listen for connections\n");
 }
 
+char* checksum(const char* input, int size) {
+	MD5_CTX m;
+	unsigned char md[16];
+	char output[33];
+	
+	MD5_Init(&m);
+
+	while(size > 0) {
+		if(size > 512) {
+			MD5_Update(&m, input, 512);
+		} else {
+			MD5_Update(&m, input, size);
+		}
+		size -= 512;
+		input += 512;
+	}
+
+	MD5_Final(md, &m);
+	int i;
+	for(i = 0; i < 16; ++i){
+		snprintf(&(output[i*2]), 16*2, "%02x", (unsigned int)md[i]);
+	}
+
+	return output;
+}
+
 char* receiveData(int fd) {
 	int MAXLINE = 8192;
 	int nsofar;
 	int nremain = MAXLINE;
 	char* buf;
-	bzero(buf, MAXLINE);
 	char* bufp = buf;
 
 	while(1) {
@@ -58,7 +83,7 @@ char* receiveData(int fd) {
 		}
 	}
 
-	printf("%s", buf);
+	printf("%s", bufp);
 	printf("\n");
 
 	return buf;
@@ -144,7 +169,7 @@ void try_get(char* request, int fd, int size) {
 
 	int MAXLINE = 8192;
 	char get_name[MAXLINE];
-	char* buff;
+	std::string buff;
 	get_name[size] = 0;
 	int j = 0;
 	for(int i = 4; i < size-1; i++) {
@@ -155,12 +180,25 @@ void try_get(char* request, int fd, int size) {
 
 	char *got = get_name;
 
-	if(access(got, F_OK)) {
-		printf("%s file exists!\n", got);
-		buff = receiveData(fd);
-		printf("%s", buff);
+	if(access(got, F_OK) != -1) {
+		//printf("%s file exists!\n", got);
+		FILE *f = fopen(got, "rb");
+		fseek(f, 0, SEEK_END);
+		long fsize = ftell(f);
+		fseek(f, 0, SEEK_SET);  //same as rewind(f);
+
+		char string[fsize + 1];
+		fread(string, fsize, 1, f);
+		fclose(f);
+
+		string[fsize] = 0;
+
+		printf("OK\n");
+		printf("%d bytes\n", fsize);
+		printf("%s", string);
+
 	}else{
-		printf("does not exist :C\n");
+		printf("does not exist :C %s\n", got);
 	}
 }
 
@@ -273,6 +311,8 @@ void file_server(int connfd, int lru_size)
 		const int MAXLINE = 8192;
 		char      buf[MAXLINE];   /* a place to store text from the client */
 		bzero(buf, MAXLINE);
+
+		int checksum_flag = 0;
 
 		/* read from socket, recognizing that we may get short counts */
 		char *bufp = buf;              /* current pointer into buffer */
