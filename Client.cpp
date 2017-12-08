@@ -39,6 +39,27 @@ void die(const char *msg1, const char *msg2)
 	exit(0);
 }
 
+
+
+void sendData(int fd,char * strbuf, size_t size){
+  size_t n = size;
+  size_t nremain = n;
+  ssize_t nsofar;
+  char *strbufp = strbuf;
+  // printf("sending: %s",strbuf);
+  while (nremain > 0) {
+    if ((nsofar = write(fd, strbufp, nremain)) <= 0) {
+      if (errno != EINTR) {
+
+        fprintf(stderr, "Write error: %s\n", strerror(errno));
+        exit(0);
+      }
+      nsofar = 0;
+    }
+    nremain -= nsofar;
+    strbufp += nsofar;
+  }
+}
 /*
  * connect_to_server() - open a connection to the server specified by the
  *                       parameters
@@ -150,68 +171,96 @@ void echo_client(int fd)
 		printf("%s", buf);
 	}
 }
-void sendData(char * buf, size_t n, int fd){
-	size_t nremain = n;
-	ssize_t nsofar;
-	char *bufp = buf;
-	while(nremain > 0)
+
+
+void recvData(int connfd){
+	const int MAXLINE = 8192;
+	char      buf[MAXLINE];   /* a place to store text from the client */
+	bzero(buf, MAXLINE);
+
+	/* read from socket, recognizing that we may get short counts */
+	char *bufp = buf;              /* current pointer into buffer */
+	ssize_t nremain = MAXLINE;     /* max characters we can still read */
+	size_t nsofar;                 /* characters read so far */
+	while (1)
 	{
-		if((nsofar = write(fd, bufp, nremain)) <= 0)
+		//printf("%s\n","shedding" );
+		/* read some data; swallow EINTRs */
+		if((nsofar = read(connfd, bufp, nremain)) < 0)
 		{
 			if(errno != EINTR)
 			{
-				fprintf(stderr, "Write error: %s\n", strerror(errno));
-				exit(0);
+				die("read error: ", strerror(errno));
 			}
-			nsofar = 0;
+			continue;
 		}
-		nremain -= nsofar;
+		/* end service to this client on EOF */
+		if(nsofar == 0)
+		{
+			//fprintf(stderr, "%s\n", buf );
+			fprintf(stderr, "received EOF\n");
+			return;
+		}
+		/* update pointer for next bit of reading */
 		bufp += nsofar;
+		nremain -= nsofar;
+	if(*(bufp-1) == '\n')
+		{
+			*bufp = 0;
+			break;
+		}
 	}
+	printf("%s\n", buf );
+
+return;
+
 }
 /*
  * put_file() - send a file to the server accessible via the given socket fd
  */
-void put_file(int fd, char *put_name)
-{
+void put_file(int fd, char *put_name){
+	const int MAXLINE = 8192;
+	char buf[MAXLINE];
+	strcpy(buf, "PUT ");
+	size_t n = strlen(buf);
+	size_t nremain = n;
+	ssize_t nsofar;
+	char * bufp = buf;
+	strcat(buf, put_name);
+	strcat(buf, "\n");
+	//sendData(fd, buf, strlen(buf));
+	//bzero(buf, MAXLINE);
 
-	/* TODO: implement a proper solution, instead of calling the echo() client */
-	if (access(put_name, F_OK) != -1){
-			//do work here
-			const int MAXLINE = 8192;
-			char buf[MAXLINE];
-			bzero(buf, MAXLINE);
-
-FILE *fileptr;
-char *contents;
-long filelen;
-
-fileptr = fopen(put_name, "rb");  // Open the file in binary mode
-fseek(fileptr, 0, SEEK_END);          // Jump to the end of the file
-filelen = ftell(fileptr);             // Get the current byte offset in the file
-rewind(fileptr);                      // Jump back to the beginning of the file
-
-contents = (char *)malloc((filelen+1)*sizeof(char)); // Enough memory for file + \0
-fread(contents, filelen, 1, fileptr); // Read in the entire file
-fclose(fileptr); // Close the file
-
-//sprintf(buf, "PUT %s\n%ld\n%02X\n", put_name, filelen, contents);
-//printf("%s\n", buf );
-sprintf(buf, "PUT %s\n%ld\n", put_name, filelen);
-
-
-sendData(buf, strlen(buf), fd);
-sendData(contents, filelen, fd);
-bzero(buf, MAXLINE);
-strncpy(buf, "\n", 1);
-sendData(buf, 1, fd);
-
-
-
-
-
+	if(put_name == NULL){
+		fprintf(stderr, "%s\n", "Please provide a file name." );
+		gets(put_name);
 	}
-	else{
+	if(access(put_name, F_OK) != -1){
+		///printf("%s", buf );
+		sendData(fd, buf, strlen(buf));
+		sleep(1);
+		FILE *fileptr = fopen(put_name, "rb");
+		fseek(fileptr, 0, SEEK_END);
+    long filelen = ftell(fileptr);
+    rewind(fileptr);
+		char * contents;
+		contents = (char *)malloc((filelen+1)*sizeof(char)); // Enough memory for file + \0
+		fread(contents, filelen, 1, fileptr); // Read in the entire file
+		fclose(fileptr); // Close the file
+		//memcpy(contents + filelen, "\n", 1);
+		char fsize[MAXLINE];
+		sprintf(fsize, "%ld\n", filelen);
+		sendData(fd, fsize, strlen(fsize));
+    sleep(1);
+		//memcpy(contents + filelen, buf, 1 );
+		sendData(fd, contents, filelen);
+	//printf("%s", contents);
+
+		sleep(1);
+		recvData(fd);
+		exit(-1);
+
+	} else {
 	perror("Error: cannot put specified file. File does not exist.");
 	exit(-1);
 	}
@@ -225,8 +274,7 @@ sendData(buf, 1, fd);
  */
 void get_file(int fd, char *get_name, char *save_name)
 {
-	/* TODO: implement a proper solution, instead of calling the echo() client */
-	echo_client(fd);
+
 }
 
 /*
