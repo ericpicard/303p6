@@ -21,13 +21,14 @@
 #include <unistd.h>
 #include "support.h"
 #include "Client.h"
-void sendData(void * buf, size_t n, int fd);
+void sendData(int fd,char * strbuf, size_t size);
 void help(char *progname)
 {
 	printf("Usage: %s [OPTIONS]\n", progname);
 	printf("Perform a PUT or a GET from a network file server\n");
 	printf("  -P    PUT file indicated by parameter\n");
 	printf("  -G    GET file indicated by parameter\n");
+	printf("  -C    use checksums for both PUT and GET\n");
 	printf("  -s    server info (IP or hostname)\n");
 	printf("  -p    port on which to contact server\n");
 	printf("  -S    for GETs, name to use when saving file locally\n");
@@ -39,6 +40,13 @@ void die(const char *msg1, const char *msg2)
 	exit(0);
 }
 
+
+char * filetomd5 (char * buffer, int length){
+	int n;
+	MD5_CTX c;
+	unsigned char digest[16];
+	char *out = (char *)malloc(33);
+}
 
 
 void sendData(int fd,char * strbuf, size_t size){
@@ -173,7 +181,7 @@ void echo_client(int fd)
 }
 
 
-void recvData(int connfd){
+void getData(int connfd){
 	const int MAXLINE = 8192;
 	char      buf[MAXLINE];   /* a place to store text from the client */
 	bzero(buf, MAXLINE);
@@ -257,8 +265,10 @@ void put_file(int fd, char *put_name){
 	//printf("%s", contents);
 
 		sleep(1);
-		recvData(fd);
-		exit(-1);
+
+		free(contents);
+		getData(fd);
+		//exit(-1);
 
 	} else {
 	perror("Error: cannot put specified file. File does not exist.");
@@ -275,6 +285,32 @@ void put_file(int fd, char *put_name){
 void get_file(int fd, char *get_name, char *save_name)
 {
 
+		/* TODO: implement a proper solution, instead of calling the echo() client */
+		//echo_client(fd);
+		const int MAXLINE = 8192;
+		char request[MAXLINE];
+
+		/* Send the get request to server*/
+		sprintf(request,"GET %s\n", get_name);
+		printf("%s\n", get_name);
+		sendData(fd, request, strlen(request));
+		sleep(1);
+		getData(fd);
+		//getData(fd);
+		//getData(fd);
+		FILE *fp = fopen(get_name, "wb");
+		//fprintf(fp, "%s", reply);
+
+		if(save_name){
+
+		rename(get_name,save_name);
+	}
+		fclose(fp);
+
+
+		/* Receive Response*/
+		//exit(0);
+
 }
 
 /*
@@ -287,13 +323,14 @@ int main(int argc, char **argv)
 	char *server = NULL;
 	char *put_name = NULL;
 	char *get_name = NULL;
+	int checksums = 0;
 	int   port;
 	char *save_name = NULL;
 
 	check_team(argv[0]);
 
 	/* parse the command-line options. */
-	while((opt = getopt(argc, argv, "hs:P:G:S:p:")) != -1)
+	while((opt = getopt(argc, argv, "hs:P:G:S:p:C")) != -1)
 	{
 		switch(opt)
 		{
@@ -301,6 +338,7 @@ int main(int argc, char **argv)
 		case 's': server = optarg; break;
 		case 'P': put_name = optarg; break;
 		case 'G': get_name = optarg; break;
+		case 'C': checksums = 1;     break;
 		case 'S': save_name = optarg; break;
 		case 'p': port = atoi(optarg); break;
 		}
@@ -310,6 +348,18 @@ int main(int argc, char **argv)
 	int fd = connect_to_server(server, port);
 
 	/* put or get, as appropriate */
+
+	if(checksums){
+		if(put_name)
+		{
+			put_file(fd, put_name);
+		}
+		else
+		{
+			get_file(fd, get_name, save_name);
+		}
+	} else {
+
 	if(put_name)
 	{
 		put_file(fd, put_name);
@@ -318,6 +368,9 @@ int main(int argc, char **argv)
 	{
 		get_file(fd, get_name, save_name);
 	}
+}
+
+
 
 	/* close the socket */
 	int rc;

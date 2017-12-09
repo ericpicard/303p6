@@ -53,7 +53,71 @@ void sendData(char * buf, int fd){
 }
 
 
+void try_get(char* request, int fd, int size) {
+	//printf("%s\n", );
+	int MAXLINE = 8192;
+	char get_name[MAXLINE];
+	char *result = (char *)malloc(sizeof (char) * MAXLINE);
+	char *numbytes = (char *)malloc(sizeof (char) * MAXLINE);
 
+	std::string buff;
+	get_name[size] = '\0';
+	int j = 0;
+	for(int i = 4; i < size-1; i++) {
+		char c = request[i];
+		if(c != '\n'){
+		get_name[j] = c;
+	}
+		putc( get_name[j], stderr);
+		j++;
+	}
+
+	char *got = get_name;
+fprintf(stderr, "%s", get_name );
+	if(access(got, F_OK) != -1) {
+		//printf("%s file exists!\n", got);
+		FILE *f = fopen(got, "rb");
+		fseek(f, 0, SEEK_END);
+		long fsize = ftell(f);
+		fseek(f, 0, SEEK_SET);  //same as rewind(f);
+
+		char string[fsize + 1];
+		fread(string, fsize, 1, f);
+		fclose(f);
+
+		string[fsize] = 0;
+		//just send it
+		/*
+		Server sends:
+        <Some one-line error message>\n
+       or
+        OK <filename>\n
+        <# bytes>\n
+        <file contents>\n
+				*/
+		char * fnameNewLine = (char *)malloc(sizeof(char) * (strlen(got) + 1));
+		strcpy(fnameNewLine, got);
+		strcat(fnameNewLine, "\n");
+		strcpy(result, "OK ");
+		memcpy(result + 3, fnameNewLine, strlen(fnameNewLine));
+		sprintf(numbytes, "%d\n", fsize);
+		memcpy(result+ strlen(result), numbytes, strlen(numbytes));
+		memcpy(result+ strlen(result), string, fsize);
+
+		//printf("OK\n");
+		//printf("%d bytes\n", fsize);
+	//	printf("%s", string);
+	sendData(result, fd);
+	sleep(1);
+
+	free(result);
+	free(numbytes);
+
+	}else{
+		sprintf(result, "does not exist :C %s\n", got);
+		sendData(result, fd);
+	}
+}
 
 
 char* try_put(char* request, int size){
@@ -359,6 +423,11 @@ void file_server(int connfd, int lru_size){
 
 
 		}
+		else if(strncmp(buf, "GET", 3) == 0) {
+		fprintf(stderr, "This is a get.\n");
+		try_get(buf, connfd, MAXLINE-nremain);
+	}
+
 	}
 }
 
