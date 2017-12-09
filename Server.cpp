@@ -20,7 +20,7 @@
 #include <iostream>     // std::cout
 #include <sstream>
 using namespace std;
-
+void sendData(char * buf, size_t size, int fd);
 void help(char *progname)
 {
 	printf("Usage: %s [OPTIONS]\n", progname);
@@ -30,6 +30,29 @@ void help(char *progname)
 	printf("  -p    port on which to listen for connections\n");
 }
 
+void sendData(char * buf, int fd){
+	//printf("%s\n","send" );
+  size_t n = strlen(buf);
+  size_t nremain = n;
+  size_t nsofar;
+  char *bufp = buf;
+  // printf("sending: %s",strbuf);
+  while (nremain > 0) {
+    if ((nsofar = write(fd, bufp, nremain)) <= 0) {
+      if (errno != EINTR) {
+
+        fprintf(stderr, "Write error: %s\n", strerror(errno));
+        exit(0);
+      }
+      nsofar = 0;
+			printf("%s\n", "here" );
+    }
+    nremain -= nsofar;
+    bufp += nsofar;
+  }
+}
+
+
 
 
 
@@ -37,6 +60,7 @@ char* try_put(char* request, int size){
 	int loc= 0;
 	int idx =0;
 	int data_start = 0;
+	char * to_return = (char *)malloc(sizeof(char)*1024);
 	const int MAXLINE = 8192;
 	char filesize[MAXLINE];
 	char put_name[MAXLINE];
@@ -56,7 +80,7 @@ data_start = loc +1;
 stringstream str(filesize);
 int x;
 str >> x;
-printf("%d\n", x);
+//printf("%d\n", x);
 idx = 0;
 int name_start = 4;
 for(int i = name_start; i<size; i++){
@@ -68,27 +92,41 @@ for(int i = name_start; i<size; i++){
 		idx++;
 	}
 }
+ put_name[idx] = '\0';
 char * contents;
 contents = (char *)malloc((x)*sizeof(char)); // Enough memory for file + \0
 
 memcpy(contents, request+data_start, x);
-printf("%s\n", put_name);
-printf("%s\n", contents);
+//printf("%s\n", put_name);
+//printf("%s\n", contents);
 if (access(put_name, F_OK) != -1){
-	printf("%s\n", "file exists... overwrite" );
+	//printf("%s\n", "file exists... overwrite" );
 	if(FILE *fp = fopen(put_name, "wb")){
-	fwrite(contents, sizeof(char), (x+1), fp);
+	fwrite(contents, sizeof(char), (x), fp);
 	fclose(fp);
+	printf("File Updated: %s. Contents:-->%s" , put_name, contents);
+	strcpy(to_return, "OK\n");
+}
+else{
+	printf("%s%s\n","Error Acessing File: " , put_name);
+	strcpy(to_return, "Error Accessing File on Server.\n");
+}
+}
+else{
+	if(FILE *fp = fopen(put_name, "wb")){
+	fwrite(contents, sizeof(char), (x), fp);
+	fclose(fp);
+	printf("File Created: %s. Contents:-->%s" , put_name, contents);
+	strcpy(to_return, "OK\n");
+}
+else{
+	printf("%s%s\n","Error Acessing File: " , put_name);
+	strcpy(to_return, "Error Accessing File on Server.\n");
 }
 }
 
-else{
-	printf("%s\n", "file does not exist.. create" );
-	if(FILE *fp = fopen(put_name, "wb")){
-	fwrite(contents, sizeof(char), (x+1), fp);
-	fclose(fp);
-}
-}
+
+return to_return;
 }
 
 
@@ -184,25 +222,12 @@ void handle_requests(int listenfd, void (*service_function)(int, int), int param
 	}
 }
 
-/*
- * file_server() - Read a request from a socket, satisfy the request, and
- *                 then close the connection.
- */
-void file_server(int connfd, int lru_size)
-{
-	/* TODO: set up a few static variables here to manage the LRU cache of
-	   files */
+char * getData(int connfd){
 
-	/* TODO: replace following sample code with code that satisfies the
-	   requirements of the assignment */
-
-	/* sample code: continually read lines from the client, and send them
-	   back to the client immediately */
-	while(1)
-	{
 		const int MAXLINE = 8192;
-		char      buf[MAXLINE];   /* a place to store text from the client */
-		bzero(buf, MAXLINE);
+		char   *   buf =(char*) malloc (sizeof(char)* MAXLINE);   /* a place to store text from the client */
+		//bzero(buf, MAXLINE);
+
 
 		/* read from socket, recognizing that we may get short counts */
 		char *bufp = buf;              /* current pointer into buffer */
@@ -210,9 +235,11 @@ void file_server(int connfd, int lru_size)
 		size_t nsofar;                 /* characters read so far */
 		while (1)
 		{
+		//	fprintf(stderr, "%s\n", "stuck" );
 			/* read some data; swallow EINTRs */
 			if((nsofar = read(connfd, bufp, nremain)) < 0)
 			{
+				printf("%s\n","error" );
 				if(errno != EINTR)
 				{
 					die("read error: ", strerror(errno));
@@ -222,47 +249,124 @@ void file_server(int connfd, int lru_size)
 			/* end service to this client on EOF */
 			if(nsofar == 0)
 			{
+
 				//fprintf(stderr, "%s\n", buf );
 				fprintf(stderr, "received EOF\n");
-				return;
+				return buf;
+				//die("fdsjkhl", "shjf");
+
 			}
-			/* update pointer for next bit of reading */
-			bufp += nsofar;
-			nremain -= nsofar;
-		if(*(bufp-1) == '\n')
-			{
+
+						bufp += nsofar;
+						nremain -= nsofar;
+
+			if(*(bufp-1) == '\n'){
 				*bufp = 0;
 				break;
+				//break;
 			}
-		}
+			/* update pointer for next bit of reading */
 
+
+		}
+	  printf("server received %d bytes\n", MAXLINE-nremain);
+		return buf;
+
+}
+
+/*
+ * file_server() - Read a request from a socket, satisfy the request, and
+ *                 then close the connection.
+ */
+void file_server(int connfd, int lru_size){
+	char* result = (char *)malloc(sizeof(char)*8192);
+
+	/* TODO: set up a few static variables here to manage the LRU cache of
+	   files */
+
+	/* TODO: replace following sample code with code that satisfies the
+	   requirements of the assignment */
+		 while (1) {
+		 const int MAXLINE = 8192;
+		 char* filename = (char *)malloc(sizeof(char)* MAXLINE);
+	 	char* fsize = (char *)malloc(sizeof(char)* MAXLINE);
+
+		 char      buf[MAXLINE];   /* a place to store text from the client */
+		 bzero(buf, MAXLINE);
+
+		 /* read from socket, recognizing that we may get short counts */
+		 char *bufp = buf;              /* current pointer into buffer */
+		 ssize_t nremain = MAXLINE;     /* max characters we can still read */
+		 size_t nsofar;
+
+		// int nline = 0;              /* characters read so far */
+		 while (1) {
+			 /* read some data; swallow EINTRs */
+			 if ((nsofar = read(connfd, bufp, nremain)) < 0) {
+				 if (errno != EINTR)
+				 die("read error: ", strerror(errno));
+				 continue;
+			 }
+			 /* end service to this client on EOF */
+			 if (nsofar == 0) {
+				 fprintf(stderr, "received EOF\n");
+				 return;
+			 }
+			 /* update pointer for next bit of reading */
+			 bufp += nsofar;
+			 nremain -= nsofar;
+			 if (*(bufp-1) == '\n') {
+				// nline ++;
+				 *bufp = 0;
+				 break;
+			 }
+		 }
+
+
+		 /* dump content back to client (again, must handle short counts) */
+		 printf("server received %d bytes\n", MAXLINE-nremain);
+		 nremain = bufp - buf;
+		// bufp = buf;
+		//printf("%s",bufp);
 		/* dump content back to client (again, must handle short counts) */
-		printf("server received %d bytes\n", MAXLINE-nremain);
-		fprintf(stderr,  buf );
+
+		//fprintf(stderr,  buf );
 		if(strncmp(buf, "PUT", 3) ==0){
-			fprintf(stderr, "This is a put.\n" );
-			try_put(buf, MAXLINE-nremain);
+			//fprintf(stderr, "This is a put.\n" );
+			memcpy(filename, buf + 4, strlen(buf) - 4);
+			//printf("%s\n",buf );
+			//printf("%s\n", filename );
+			fsize = getData(connfd);
+			//printf("%s\n", fsize );
 
-		}
-		nremain = bufp - buf;
-		bufp = buf;
-
-		while(nremain > 0)
-		{
-			/* write some data; swallow EINTRs */
-			if((nsofar = write(connfd, bufp, nremain)) <= 0)
-			{
-				if(errno != EINTR)
-				{
-					die("Write error: ", strerror(errno));
-				}
-				nsofar = 0;
+			memcpy(buf + strlen(buf), fsize, strlen(fsize));
+			int size_as_dec = 0;
+			int len = strlen(fsize);
+			for(int i=0; i<len; i++){
+				size_as_dec = size_as_dec * 10 + (fsize[i] - '0');
 			}
-			nremain -= nsofar;
-			bufp += nsofar;
+			char* contents = (char *)malloc(sizeof(char)* size_as_dec);
+			contents = getData(connfd);
+			//getData(connfd);
+		  //printf("%s\n", contents );
+
+			memcpy(buf + strlen(buf), contents, size_as_dec);
+			//printf("%s\n", buf);
+			result = try_put(buf, MAXLINE - nremain);
+			sleep(1);
+			sendData(result, connfd);
+			//sleep(1);
+
+
 		}
 	}
 }
+
+	//sendData(result, strlen(result), connfd);
+
+
+
+
 
 
 
