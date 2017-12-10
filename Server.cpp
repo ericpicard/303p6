@@ -29,7 +29,6 @@ void help(char *progname)
 	printf("  -l    number of entries in the LRU cache\n");
 	printf("  -p    port on which to listen for connections\n");
 }
-
 char *md5sum(const char *str, int length) {
   int n;
   MD5_CTX c;
@@ -158,7 +157,9 @@ fprintf(stderr, "%s", get_name );
 
 	free(result);
 	free(numbytes);
-
+free(data);
+free(checksum);
+free(fnameNewLine);
 	}else{
 		sprintf(result, "does not exist :C %s\n", got);
 		sendData(result, fd);
@@ -167,6 +168,7 @@ fprintf(stderr, "%s", get_name );
 
 
 char* try_put(char* request, int size, int checksums, int sumlen){
+	printf("%d\n", checksums);
 	int loc= 0;
 	int idx =0;
 	int allow_write =0;
@@ -228,13 +230,14 @@ memcpy(contents, request+data_start+sumlen, x);
 printf("%s\n",checksum );
 printf("%s\n",contents );
 
-
+if(checksums){
 if(memcmp(checksum, md5sum(contents, x), 32 ) == 0){
 	printf("%s\n", "Received valid checksum.");
 	allow_write = 1;
 }else{
 	printf("%s\n", "Error. Checksum mismatch.");
 	allow_write = 0;
+}
 }
 
 	FILE *fp;
@@ -244,7 +247,7 @@ if (access(put_name, F_OK) != -1){
 	if((fp = fopen(put_name, "wb"))&& allow_write){
 	fwrite(contents, sizeof(char), (x), fp);
 	fclose(fp);
-	printf("File Updated: %s. Contents:-->%s" , put_name, contents);
+	//printf("File Updated: %s. Contents:-->%s" , put_name, contents);
 	strcpy(to_return, "OK\n");
 }
 else{
@@ -256,7 +259,7 @@ else{
 	if(fp = fopen(put_name, "wb")){
 	fwrite(contents, sizeof(char), (x), fp);
 	fclose(fp);
-	printf("File Created: %s. Contents:-->%s" , put_name, contents);
+	//printf("File Created: %s. Contents:-->%s" , put_name, contents);
 	strcpy(to_return, "OK\n");
 }
 else{
@@ -265,6 +268,8 @@ else{
 }
 }
 
+free(checksum);
+free(contents);
 
 return to_return;
 }
@@ -362,7 +367,7 @@ void handle_requests(int listenfd, void (*service_function)(int, int), int param
 	}
 }
 
-char * getData(int connfd){
+char * getData(int connfd, int toread){
 
 		const int MAXLINE = 8192;
 		char   *   buf =(char*) malloc (sizeof(char)* MAXLINE);   /* a place to store text from the client */
@@ -371,10 +376,13 @@ char * getData(int connfd){
 
 		/* read from socket, recognizing that we may get short counts */
 		char *bufp = buf;              /* current pointer into buffer */
-		ssize_t nremain = MAXLINE;     /* max characters we can still read */
+		ssize_t nremain = toread;     /* max characters we can still read */
 		size_t nsofar;                 /* characters read so far */
 		while (1)
 		{
+			if(nsofar>=toread){
+				break;
+			}
 		//	fprintf(stderr, "%s\n", "stuck" );
 			/* read some data; swallow EINTRs */
 			if((nsofar = read(connfd, bufp, nremain)) < 0)
@@ -539,7 +547,7 @@ void file_server(int connfd, int lru_size){
 			memcpy(filename, buf + name_start, strlen(buf) - name_start);
 			//printf("%s\n",buf );
 			//printf("%s\n", filename );
-			fsize = getData(connfd);
+			fsize = getData(connfd, MAXLINE);
 
 			if(hasChecksum){
 				checksum = getSum(connfd, sumbytes);
@@ -554,7 +562,8 @@ void file_server(int connfd, int lru_size){
 				size_as_dec = size_as_dec * 10 + (fsize[i] - '0');
 			}
 			char* contents = (char *)malloc(sizeof(char)* size_as_dec);
-			contents = getData(connfd);
+			contents = getData(connfd, 256);
+
 			//getData(connfd);
 		  //printf("%s\n", contents );
 			if(hasChecksum){
@@ -562,6 +571,7 @@ void file_server(int connfd, int lru_size){
 				printf("%s\n",buf );
 			}
 			memcpy(buf + strlen(buf) , contents, size_as_dec);
+			free(contents);
 			printf("%s\n", buf);
 			//printf("%s\n", buf);
 			result = try_put(buf, MAXLINE - nremain, hasChecksum, sumbytes);
@@ -580,6 +590,9 @@ void file_server(int connfd, int lru_size){
 		fprintf(stderr, "This is a get.\n");
 		try_get(buf, connfd, MAXLINE-nremain, 0);
 	}
+
+
+
 
 
 	}

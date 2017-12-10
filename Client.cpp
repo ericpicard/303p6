@@ -286,7 +286,7 @@ return buf;
 /*
  * put_file() - send a file to the server accessible via the given socket fd
  */
-void put_file(int fd, char *put_name, int checksums){
+void put_file(int fd, char *put_name, int checksums, int usersa){
 	const int MAXLINE = 8192;
 	char buf[MAXLINE];
 	char* checksum = (char *)malloc(sizeof(char)*MAXLINE);
@@ -322,8 +322,7 @@ if(put_name == NULL){
 		char * contents;
 		char * encryptedContents;
 		unsigned char* contentsforRSA = (unsigned char *)malloc((filelen+1)*sizeof(char));
-		contents = (char *)malloc((filelen+1)*sizeof(char));
-		encryptedContents = (char *)malloc((filelen+1)*sizeof(char));// Enough memory for file + \0
+		contents = (char *)malloc((filelen+1)*sizeof(char));// Enough memory for file + \0
 		fread(contents, filelen, 1, fileptr); // Read in the entire file
 		fclose(fileptr); // Close the file
 		//memcpy(contents + filelen, "\n", 1);
@@ -333,10 +332,19 @@ if(put_name == NULL){
 		strcpy(pubkey, "public.pem");
 		memcpy(contentsforRSA, contents, filelen);
     int encrypted_length= public_encrypt(contentsforRSA,filelen,pubkey,encrypted);
+			encryptedContents = (char *)malloc((256)*sizeof(char));
+			memcpy(encryptedContents, encrypted, encrypted_length);
 		char fsize[MAXLINE];
-
+if(!usersa){
 		sprintf(fsize, "%ld\n", filelen);
+
+	}
+	else{
+		sprintf(fsize, "%d\n", encrypted_length);
+	}
 		printf("%s\n", encrypted );
+		printf("%s\n", encryptedContents );
+		printf("%d\n", encrypted_length );
 		sendData(fd, fsize, strlen(fsize));
     sleep(1);
 		if(checksums){
@@ -348,14 +356,26 @@ if(put_name == NULL){
 			sleep(1);
 		}
 		//memcpy(contents + filelen, buf, 1 );
+		if(!usersa){
 		sendData(fd, contents, filelen);
+	}else
+	{
+
+		//strcat(encryptedContents, "\n");
+		sendData(fd, encryptedContents, encrypted_length);
+	}
 	//printf("%s", contents);
 
 		sleep(1);
 
 		free(contents);
+		free(encryptedContents);
+		free(contentsforRSA);
+		free(checksum);
+
 		response = getData(fd);
 		printf("%s\n", response );
+		free(response);
 		//exit(-1);
 
 	} else {
@@ -479,7 +499,7 @@ int main(int argc, char **argv)
 
 	if(put_name)
 	{
-		put_file(fd, put_name, checksums);
+		put_file(fd, put_name, checksums, 1);
 	}
 	else
 	{
